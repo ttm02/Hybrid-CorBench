@@ -41,9 +41,6 @@ def read_tool_data():
             # only read the directories
             if not test_dir.is_dir():
                 continue
-                # exclude mini apps
-            if test_dir.name == "kripke" or test_dir.name == "amg2013" or test_dir.name == "lulesh":
-                continue
 
             jobs += 1
 
