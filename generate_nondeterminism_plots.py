@@ -30,6 +30,34 @@ def parse_command_line_args():
     return args
 
 
+def read_tool_data():
+    tools_result_data = {}
+    jobs = 0
+    # read all available input data
+    for tool in TOOLS:
+        tools_result_data[tool] = {}
+
+        for test_dir in os.scandir(INPUT_DIR + "/" + tool):
+            # only read the directories
+            if not test_dir.is_dir():
+                continue
+                # exclude mini apps
+            if test_dir.name == "kripke" or test_dir.name == "amg2013" or test_dir.name == "lulesh":
+                continue
+
+            jobs += 1
+
+            job_id = test_dir.name
+            # read the data from dir
+            data = {}
+            with open(test_dir.path + "/results.json", 'r') as f:
+                data = json.load(f)
+                tools_result_data[tool][job_id] = data
+    print("Read Data from %i jobs" % (jobs))
+
+    return tools_result_data
+
+
 # from https://stackoverflow.com/questions/37765197/darken-or-lighten-a-color-in-matplotlib
 def lighten_color(color, amount=0.5):
     """
@@ -86,7 +114,7 @@ def get_plot(category, data, output_format):
     labelpos=(-0.05, -0.25)
     if "ordering" in category:
         # more yspace
-        figsz = (8, 7)
+        figsz = (8, 7.5)
         labelpos=(-0.05, -0.20)
     if "memory" in category:
         # less yspace
@@ -181,10 +209,10 @@ def get_plot(category, data, output_format):
     # ax2.set_yticks([1 + case_count / 2 * barWidth, stop - case_count / 2 * barWidth])
     # ax2.set_yticklabels(names)
 
-    ax1.set_xticks([40, 80, 120, 160, 200, 240])
-    ax1.set_xticklabels([40, 80, 120, 160, 200, 240], fontsize=ftsize-2)
-    ax2.set_xticks([40, 80, 120, 160, 200, 240])
-    ax2.set_xticklabels([40, 80, 120, 160, 200, 240], fontsize=ftsize-2)
+    ax1.set_xticks([20, 40, 60, 80, 100, 120])
+    ax1.set_xticklabels([20, 40, 60, 80, 100, 120], fontsize=ftsize-2)
+    ax2.set_xticks([20, 40, 60, 80, 100, 120])
+    ax2.set_xticklabels([20, 40, 60, 80, 100, 120], fontsize=ftsize-2)
 
     ax1.set_axisbelow(True)
     ax2.set_axisbelow(True)
@@ -261,12 +289,11 @@ def main():
             correct = False
             count = 0
             for jid in tools_result_data[tool]:
-                if case in tools_result_data[tool][jid]:
-                    case_data = tools_result_data[tool][jid][case]
-                    count += 1
-                    category = get_category(case_data)
-                    correct = is_correct_case(case_data)
-                    case_score = add_score_nondeterminism(case_score, case_data)
+                case_data = tools_result_data[tool][jid][case]
+                count += 1
+                category = get_category(case_data)
+                correct = is_correct_case(case_data)
+                case_score = add_score_nondeterminism(case_score, case_data)
 
 
             if not correct:
@@ -280,6 +307,8 @@ def main():
     print("generate plots")
 
     for category in openmp_categories:
+        #case_count = len(data['MUST'][category]['tool_present'])
+        # plot only for data_race, other skript for other category
         get_plot(category, data, ARGS.format)
         print(category)
 

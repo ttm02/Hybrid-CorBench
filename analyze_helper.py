@@ -1,6 +1,7 @@
 import json
 
 input_fname_pattern = "[BENCH_BASE_DIR]/output/results_[TOOL].json"
+input_fname_pattern_mini_app_performance = "[BENCH_BASE_DIR]/output/mini_app_performance_[TOOL].json"
 
 ## entry: name: [TP,TN,FP,FN,ERR,error_present,error_present_without_tool,case_id,full_case_name]
 # True Positive, True Negative, False Positive, False negative,
@@ -56,13 +57,14 @@ def get_category(this_case):
 
 def load_case_names(base_dir):
     omp_dir=base_dir+"/micro-benches/0-level/openmp/"
+
     filename = base_dir+"/micro-benches/0-level/openmp/case_numbering.txt"
     with open(filename) as file:
         lines = file.readlines()
         lines = [line.rstrip() for line in lines]
 
     case_names = {}
-
+    omp_dir = "/home/ss540294/research/MPI-Corrbench/micro-benches/0-level/openmp/"
     for l in lines:
         name, number = l.split(" ")
         case_names[omp_dir+name]=int(number)
@@ -74,30 +76,160 @@ def is_correct_case(this_case):
     return "correct" in name
 
 
-def read_tool_data():
-    tools_result_data = {}
-    jobs = 0
-    # read all available input data
-    for tool in TOOLS:
-        tools_result_data[tool] = {}
+def add_score(score, case):
+    score[0] += case[0]
+    score[1] += case[1]
+    score[2] += case[2]
+    score[3] += case[3]
+    score[4] += case[4]
+    score[5] += case[5]
+    score[6] += case[6]
+    return score
 
-        for test_dir in os.scandir(INPUT_DIR + "/" + tool):
-            # only read the directories
-            if not test_dir.is_dir():
-                continue
-                # exclude mini apps
-            if test_dir.name == "kripke" or test_dir.name == "amg2013" or test_dir.name == "lulesh":
-                continue
+def load_mini_app_performance_data(tools, bench_base_dir):
+    data = {}
+    for tool in tools:
+        fname = input_fname_pattern_mini_app_performance
+        fname = fname.replace("[TOOL]", tool).replace("[BENCH_BASE_DIR]", bench_base_dir)
+        with open(fname, 'r') as file:
+            data[tool] = json.load(file)
+    return data
 
-            jobs += 1
 
-            job_id = test_dir.name
-            # read the data from dir
-            data = {}
-            with open(test_dir.path + "/results.json", 'r') as f:
-                data = json.load(f)
-                tools_result_data[tool][job_id] = data
-    print("Read Data from %i jobs" % (jobs))
+def load_data(tools, bench_base_dir):
+    data = {}
+    for tool in tools:
+        fname = input_fname_pattern
+        fname = fname.replace("[TOOL]", tool).replace("[BENCH_BASE_DIR]", bench_base_dir)
+        with open(fname, 'r') as file:
+            data[tool] = json.load(file)
+    return data
 
-    return tools_result_data
+
+
+
+def reduce_data(data, tools):
+    result = data
+
+    for tool in tools:
+        for key in result[tool]:
+            case = result[tool][key]
+            # check if error was found at least one time
+            # case where the classifications differ will be explored by a different method so no need to take care about this
+            # found: ignore warnings
+            if (case[FP] > 0):
+                assert not case[FN] > 0
+                assert not case[TP] > 0
+                case[FP] = 1
+                case[TN] = 0
+                case[TW] = 0
+                case[FW] = 0
+                case[ERR] = 0
+
+            if (case[TP] > 0):
+                assert not case[TN] > 0
+                assert not case[FP] > 0
+                case[TP] = 1
+                case[FN] = 0
+                case[TW] = 0
+                case[FW] = 0
+                case[ERR] = 0
+
+            if (case[TW] > 0):
+                assert not case[TP] > 0
+                assert not case[FP] > 0
+                assert not case[FW] > 0
+                assert not case[TN] > 0
+                case[TW] = 1
+                case[FN] = 0
+                case[ERR] = 0
+
+            if (case[FW] > 0):
+                assert not case[TP] > 0
+                assert not case[FP] > 0
+                assert not case[TW] > 0
+                assert not case[FN] > 0
+                case[TN] = 0
+                case[FW] = 1
+                case[ERR] = 0
+
+            if (case[TN] > 0):
+                assert not case[TP] > 0
+                assert not case[FP] > 0
+                assert not case[FN] > 0
+                case[TN] = 1
+                case[ERR] = 0
+
+            if (case[FN] > 0):
+                assert not case[TN] > 0
+                assert not case[FP] > 0
+                assert not case[TP] > 1
+                case[FN] = 1
+                case[ERR] = 0
+
+            if (case[ERR] > 0):
+                assert not case[TN] > 0
+                assert not case[FP] > 0
+                assert not case[TP] > 0
+                assert not case[FN] > 0
+                # else the case was catched before
+                case[ERR] = 1
+
+            result[tool][key] = case
+
+    return result
+
+
+# takes in reduced data
+def score_by_tool(tools, data):
+    result = {}
+
+    for tool in tools:
+        total_score = [0, 0, 0, 0, 0, 0, 0]
+        for case in data[tool].values():
+            total_score = add_score(total_score, case)
+        result[tool] = total_score
+
+    return result
+
+
+# takes in reduced data
+def score_by_case(tools, data):
+    result = {}
+
+    for case in data[tools[0]].keys():
+        total_score = [0, 0, 0, 0, 0, 0, 0]
+        for tool in tools:
+            total_score = add_score(total_score, data[tool][case])
+
+        id = data[tools[0]][case][case_id]
+        total_score.append(id)
+        result[case] = total_score
+
+    return result
+
+# takes in reduced data
+# scores by category
+def score_by_category(tools, data):
+    result = {}
+    for category in categories:
+        result[category] = {'base': {}, 'conflo': {}}
+
+    for tool in tools:
+        for category in categories:
+            result[category]['base'][tool] = [0, 0, 0, 0, 0, 0, 0]
+            result[category]['conflo'][tool] = [0, 0, 0, 0, 0, 0, 0]
+
+        for case in data[tool].values():
+            name = case[full_case_name]
+            complexity = 'base'
+            if 'conflo/' in name:
+                complexity = 'conflo'
+
+            category = get_category(case)
+            if category:
+                score = add_score(result[category][complexity][tool], case)
+                result[category][complexity][tool] = score
+
+    return result
 
